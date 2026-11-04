@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wavetable Synthesis Simulator - Topic 4.2</title>
+    <style>
+        /* Coursera Brand Identity */
+        :root {
+            --coursera-blue: #0056D2;
+            --coursera-blue-hover: #00419e;
+            --text-main: #1F1F1F;
+            --text-secondary: #636363;
+            --bg-page: #F5F7F8;
+            --bg-panel: #FFFFFF;
+            --border-color: #E2E2E2;
+            --success-green: #00885A;
+            --warning-yellow: #FFC107;
+        }
+
+        body {
+            font-family: 'Source Sans Pro', Arial, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            line-height: 1.5;
+        }
+
+        .screen {
+            background-color: var(--bg-panel);
+            padding: 40px;
+            border-radius: 8px;
+            max-width: 900px;
+            width: 100%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            border: 1px solid var(--border-color);
+            box-sizing: border-box;
+        }
+
+        #app-screen { display: none; }
+
+        h1, h2 { margin-top: 0; color: var(--text-main); }
+        p { color: var(--text-secondary); }
+
+        .tutorial-content {
+            background-color: #EBF3FF;
+            padding: 20px;
+            border-left: 4px solid var(--coursera-blue);
+            margin-bottom: 30px;
+        }
+
+        /* Simulating a 3D-ish Flipbook View */
+        .wt-visualizer {
+            background-color: #111;
+            border-radius: 4px;
+            margin: 20px 0;
+            width: 100%;
+            height: 250px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        button.btn-primary {
+            background-color: var(--coursera-blue);
+            color: #FFFFFF;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button.btn-primary:hover { background-color: var(--coursera-blue-hover); }
+        button:focus, input[type="range"]:focus { outline: 3px solid #82B1FF; outline-offset: 2px; }
+
+        #btn-play {
+            width: 100%;
+            padding: 20px;
+            font-size: 20px;
+            background-color: #000;
+            margin-bottom: 20px;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.1s;
+        }
+        #btn-play:active { background-color: #333; }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .control-block {
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: #FAFAFA;
+            transition: opacity 0.3s;
+        }
+
+        .control-block.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .block-title {
+            font-weight: bold;
+            color: var(--coursera-blue);
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        input[type="range"] { width: 100%; cursor: pointer; margin-bottom: 15px; }
+
+        .mission-box {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #F9F9F9;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        .mission-title { font-weight: bold; color: var(--coursera-blue); margin-bottom: 10px; }
+        .success-text { color: var(--success-green); font-weight: bold; }
+        
+        .challenge-box {
+            background-color: #fff;
+            border-left: 4px solid var(--warning-yellow);
+            padding: 15px;
+            margin-top: 15px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Tutorial Screen -->
+    <div id="tutorial-screen" class="screen" role="dialog" aria-labelledby="tutorial-title">
+        <h1 id="tutorial-title">Wavetable Synthesis Simulator</h1>
+        <div class="tutorial-content">
+            <p><strong>Objective:</strong> Understand how wavetable scanning works by navigating through a "flipbook" of waveform frames to create evolving digital textures.</p>
+            <p><strong>Instructions:</strong></p>
+            <ol>
+                <li>Click <strong>Start Simulator</strong>.</li>
+                <li>This is a <strong>100% guided exercise</strong>. Follow the 5 sequential missions exactly as instructed.</li>
+                <li>Instead of a static waveform, a Wavetable is a sequence of frames. Moving through them is called <em>scanning</em>.</li>
+                <li>You can use the large button or your <strong>Spacebar / Enter</strong> key to trigger the sound.</li>
+            </ol>
+        </div>
+        <button id="btn-start" class="btn-primary" tabindex="0">Start Simulator</button>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="app-screen" class="screen" role="main" aria-hidden="true">
+        <h2>The Flipbook Oscillator</h2>
+        <p>Watch the 3D-style visualizer. The highlighted wave is your current frame. Scanning blends them via <em>interpolation</em>.</p>
+        
+        <div class="wt-visualizer" aria-label="3D Wavetable Flipbook Visualizer" role="img">
+            <canvas id="wt-canvas" width="850" height="250"></canvas>
+        </div>
+        
+        <button id="btn-play" aria-pressed="false" tabindex="0">PRESS TO TRIGGER NOTE</button>
+
+        <div class="controls-grid">
+            <!-- WT Engine Controls -->
+            <div id="mod-wt" class="control-block">
+                <div class="block-title">Wavetable Engine</div>
+                
+                <label for="wt-pos">Wavetable Position (Scan): <span id="val-pos">0</span>%</label>
+                <input type="range" id="wt-pos" min="0" max="100" value="0">
+                <small style="color:var(--text-secondary); display:block; margin-bottom:15px;">Manually flips through the frames in the table.</small>
+
+                <label for="wt-lfo">LFO to Position (Motion): <span id="val-lfo">0</span>%</label>
+                <input type="range" id="wt-lfo" min="0" max="100" value="0">
+                <small style="color:var(--text-secondary); display:block; margin-bottom:15px;">Automates scanning to make the sound evolve.</small>
+
+                <label for="wt-unison">Unison (Width): <span id="val-uni">0</span>%</label>
+                <input type="range" id="wt-unison" min="0" max="100" value="0">
+                <small style="color:var(--text-secondary);">Stacks and detunes multiple copies to widen the sound.</small>
+            </div>
+
+            <!-- Envelope Controls -->
+            <div id="mod-env" class="control-block disabled">
+                <div class="block-title">Master Envelope</div>
+                
+                <label for="env-atk">Attack: <span id="val-atk">0.1</span>s</label>
+                <input type="range" id="env-atk" min="0" max="3" step="0.1" value="0.1">
+                
+                <label for="env-rel">Release: <span id="val-rel">0.1</span>s</label>
+                <input type="range" id="env-rel" min="0" max="3" step="0.1" value="0.1">
+
+                <small style="color:var(--text-secondary); display:block; margin-top:15px;">Note: Sustain is fixed at 100% while held.</small>
+            </div>
+        </div>
+        
+        <div class="mission-box" aria-live="polite">
+            <div id="mission-title" class="mission-title">Mission 1/5: The Manual Scan (Guided)</div>
+            <div id="mission-status">Hold the trigger button and slowly drag the <strong>Wavetable Position</strong> slider. Hear how the sound morphs smoothly from a pure sine to a rich, metallic digital wave via interpolation.</div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const tutorialScreen = document.getElementById('tutorial-screen');
+        const appScreen = document.getElementById('app-screen');
+        const btnStart = document.getElementById('btn-start');
+        const btnPlay = document.getElementById('btn-play');
+        
+        const inpPos = document.getElementById('wt-pos');
+        const inpLfo = document.getElementById('wt-lfo');
+        const inpUni = document.getElementById('wt-unison');
+        const inpAtk = document.getElementById('env-atk');
+        const inpRel = document.getElementById('env-rel');
+        
+        const valPos = document.getElementById('val-pos');
+        const valLfo = document.getElementById('val-lfo');
+        const valUni = document.getElementById('val-uni');
+        const valAtk = document.getElementById('val-atk');
+        const valRel = document.getElementById('val-rel');
+
+        const modEnv = document.getElementById('mod-env');
+        const canvas = document.getElementById('wt-canvas');
+        const ctx = canvas.getContext('2d');
+        const mTitle = document.getElementById('mission-title');
+        const mStatus = document.getElementById('mission-status');
+
+        let audioCtx, masterGain;
+        let oscC, oscL, oscR; 
+        let panL, panR;
+        let isPressed = false;
+        let currentMission = 1;
+        
+        const BASE_FREQ = 110; 
+        const NUM_HARMONICS = 20;
+        let lfoPhase = 0; 
+
+        const frames = [
+            Array.from({length: NUM_HARMONICS}, (_, i) => i === 1 ? 1 : 0),
+            Array.from({length: NUM_HARMONICS}, (_, i) => i % 2 !== 0 ? 1/(i*i) : 0),
+            Array.from({length: NUM_HARMONICS}, (_, i) => i > 0 ? 1/i : 0),
+            Array.from({length: NUM_HARMONICS}, (_, i) => i > 0 ? (Math.sin(i)/i) + (i>10?0.5:0) : 0)
+        ];
+
+        btnStart.addEventListener('click', () => {
+            tutorialScreen.style.display = 'none';
+            appScreen.style.display = 'block';
+            initAudio();
+            drawWavetable();
+        });
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                masterGain = audioCtx.createGain();
+                masterGain.gain.value = 0;
+                masterGain.connect(audioCtx.destination);
+            }
+        }
+
+        function getInterpolatedWave(position) {
+            const tablePos = (position / 100) * (frames.length - 1);
+            const idx1 = Math.floor(tablePos);
+            const idx2 = Math.min(idx1 + 1, frames.length - 1);
+            const mix = tablePos - idx1;
+
+            const real = new Float32Array(NUM_HARMONICS);
+            const imag = new Float32Array(NUM_HARMONICS);
+            
+            for (let i = 1; i < NUM_HARMONICS; i++) {
+                real[i] = frames[idx1][i] * (1 - mix) + frames[idx2][i] * mix;
+            }
+            return audioCtx.createPeriodicWave(real, imag);
+        }
+
+        function updateOscillators(position) {
+            if (isPressed && oscC) {
+                const customWave = getInterpolatedWave(position);
+                oscC.setPeriodicWave(customWave);
+                oscL.setPeriodicWave(customWave);
+                oscR.setPeriodicWave(customWave);
+            }
+        }
+
+        function triggerNote() {
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            if (isPressed) return;
+            
+            isPressed = true;
+            btnPlay.setAttribute('aria-pressed', 'true');
+            btnPlay.style.backgroundColor = '#0056D2';
+
+            const now = audioCtx.currentTime;
+            
+            oscC = audioCtx.createOscillator();
+            oscL = audioCtx.createOscillator();
+            oscR = audioCtx.createOscillator();
+            
+            panL = audioCtx.createStereoPanner();
+            panR = audioCtx.createStereoPanner();
+            
+            panL.pan.value = -0.8;
+            panR.pan.value = 0.8;
+
+            const uni = parseInt(inpUni.value);
+            oscC.frequency.value = BASE_FREQ;
+            oscL.frequency.value = BASE_FREQ * (1 - (uni/100 * 0.015)); 
+            oscR.frequency.value = BASE_FREQ * (1 + (uni/100 * 0.015)); 
+
+            const uniGain = uni > 0 ? 0.4 : 0.8; 
+            
+            const initWave = getInterpolatedWave(getCurrentPosition());
+            oscC.setPeriodicWave(initWave);
+            oscL.setPeriodicWave(initWave);
+            oscR.setPeriodicWave(initWave);
+
+            oscC.connect(masterGain);
+            
+            if (uni > 0) {
+                oscL.connect(panL);
+                oscR.connect(panR);
+                panL.connect(masterGain);
+                panR.connect(masterGain);
+            }
+
+            const atk = parseFloat(inpAtk.value);
+            masterGain.gain.cancelScheduledValues(now);
+            masterGain.gain.setValueAtTime(0, now);
+            masterGain.gain.linearRampToValueAtTime(uniGain, now + atk);
+
+            oscC.start(now);
+            oscL.start(now);
+            oscR.start(now);
+
+            checkMissions();
+        }
+
+        function releaseNote() {
+            if (!audioCtx || !isPressed) return;
+            isPressed = false;
+            btnPlay.setAttribute('aria-pressed', 'false');
+            btnPlay.style.backgroundColor = '#000';
+
+            const now = audioCtx.currentTime;
+            const rel = parseFloat(inpRel.value);
+            
+            masterGain.gain.cancelScheduledValues(now);
+            masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+            masterGain.gain.linearRampToValueAtTime(0, now + rel);
+            
+            if (oscC) {
+                oscC.stop(now + rel + 0.1);
+                oscL.stop(now + rel + 0.1);
+                oscR.stop(now + rel + 0.1);
+            }
+        }
+
+        function getCurrentPosition() {
+            let basePos = parseFloat(inpPos.value);
+            let lfoDepth = parseFloat(inpLfo.value);
+            
+            let modPos = basePos + (Math.sin(lfoPhase) * (lfoDepth / 2));
+            return Math.max(0, Math.min(100, modPos));
+        }
+
+        function updateValues() {
+            valPos.textContent = inpPos.value;
+            valLfo.textContent = inpLfo.value;
+            valUni.textContent = inpUni.value;
+            valAtk.textContent = inpAtk.value;
+            valRel.textContent = inpRel.value;
+            
+            if (isPressed && oscC) {
+                const uni = parseInt(inpUni.value);
+                oscL.frequency.setTargetAtTime(BASE_FREQ * (1 - (uni/100 * 0.015)), audioCtx.currentTime, 0.05);
+                oscR.frequency.setTargetAtTime(BASE_FREQ * (1 + (uni/100 * 0.015)), audioCtx.currentTime, 0.05);
+                
+                if (uni > 0) {
+                    oscL.connect(panL);
+                    oscR.connect(panR);
+                } else {
+                    oscL.disconnect();
+                    oscR.disconnect();
+                }
+            }
+            checkMissions();
+        }
+
+        function drawWavetable() {
+            requestAnimationFrame(drawWavetable);
+            
+            lfoPhase += 0.02;
+            
+            const currentPos = getCurrentPosition();
+            updateOscillators(currentPos); 
+
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const totalFrames = 20;
+            const tablePosIndex = (currentPos / 100) * (totalFrames - 1);
+            
+            for (let f = totalFrames - 1; f >= 0; f--) {
+                const isCurrent = Math.abs(tablePosIndex - f) < 0.8;
+                const posPerc = (f / (totalFrames - 1)) * 100;
+                
+                const tableIdx = (f / (totalFrames - 1)) * (frames.length - 1);
+                const idx1 = Math.floor(tableIdx);
+                const idx2 = Math.min(idx1 + 1, frames.length - 1);
+                const mix = tableIdx - idx1;
+
+                ctx.beginPath();
+                const offsetY = 120 - (f * 5); 
+                const offsetX = (f * 6);
+                
+                for (let x = 0; x < canvas.width - 150; x++) {
+                    let t = (x / (canvas.width - 150)) * Math.PI * 4; 
+                    let y = 0;
+                    
+                    for (let i = 1; i < NUM_HARMONICS; i++) {
+                        let mag = frames[idx1][i] * (1 - mix) + frames[idx2][i] * mix;
+                        y += mag * Math.sin(i * t);
+                    }
+
+                    const drawY = offsetY - (y * 40);
+                    const drawX = x + offsetX;
+                    
+                    if (x === 0) ctx.moveTo(drawX, drawY);
+                    else ctx.lineTo(drawX, drawY);
+                }
+
+                if (isCurrent) {
+                    ctx.strokeStyle = '#82B1FF';
+                    ctx.lineWidth = 3;
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    ctx.strokeStyle = '#444';
+                    ctx.lineWidth = 1;
+                    ctx.globalAlpha = 0.3;
+                }
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function checkMissions() {
+            const pos = parseInt(inpPos.value);
+            const lfo = parseInt(inpLfo.value);
+            const uni = parseInt(inpUni.value);
+            const atk = parseFloat(inpAtk.value);
+            const rel = parseFloat(inpRel.value);
+
+            if (currentMission === 1 && pos > 50 && isPressed) {
+                currentMission = 2;
+                mTitle.textContent = "Mission 2/5: Automated Scanning (Guided)";
+                mStatus.innerHTML = "Moving it by hand is hard while playing. Raise <strong>LFO to Position</strong> (>30%). Notice how the highlight moves autonomously, evolving the sound.";
+            } 
+            else if (currentMission === 2 && lfo > 30 && isPressed) {
+                currentMission = 3;
+                mTitle.textContent = "Mission 3/5: The Unison Choir (Guided)";
+                mStatus.innerHTML = "Wavetables excel at massive pads. Increase <strong>Unison</strong> (>50%). This stacks and detunes multiple copies of the oscillator. Hear it widen!";
+            }
+            else if (currentMission === 3 && uni > 50 && isPressed) {
+                currentMission = 4;
+                modEnv.classList.remove('disabled');
+                mTitle.textContent = "Mission 4/5: The Pad Envelope (Guided)";
+                mStatus.innerHTML = "Pads need to breathe. Set a slow <strong>Attack</strong> (>1.0s) and a long <strong>Release</strong> (>1.0s). Trigger a note to hear the slow swell and fade.";
+            }
+            else if (currentMission === 4 && atk > 1.0 && rel > 1.0 && isPressed) {
+                currentMission = 5;
+                mTitle.textContent = "Mission 5/5: The Evolving Pad (Guided)";
+                mStatus.innerHTML = "Let's put it all together to create the pad for your Week 4 Assignment. Set <strong>LFO to Position</strong> > 30%, <strong>Unison</strong> > 40%, and keep your <strong>Attack/Release</strong> slow (> 1.0s). Hold the note!";
+            }
+            else if (currentMission === 5 && lfo > 30 && uni > 40 && atk > 1.0 && rel > 1.0 && isPressed) {
+                currentMission = 6;
+                mTitle.textContent = "Guided Exercise Completed!";
+                mTitle.classList.add('success-text');
+                
+                mStatus.innerHTML = "<strong>Congratulations!</strong> You combined Wavetable Scanning, Unison, and ADSR to create a crystalline digital pad.<br><br>" + 
+                                    "<div class='challenge-box'>" +
+                                    "<strong>Final Note for Coursera:</strong><br>" + 
+                                    "This concludes the guided exercise. <strong>Ensure you note down these synthesis concepts (Scanning, Unison, Interpolation)</strong> before closing the window, as you will need to apply them in your DAW for the final ensemble!</div>";
+            }
+        }
+
+        // Listeners
+        btnPlay.addEventListener('mousedown', triggerNote);
+        btnPlay.addEventListener('mouseup', releaseNote);
+        btnPlay.addEventListener('mouseleave', releaseNote);
+        btnPlay.addEventListener('touchstart', (e) => { e.preventDefault(); triggerNote(); });
+        btnPlay.addEventListener('touchend', (e) => { e.preventDefault(); releaseNote(); });
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                triggerNote();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                releaseNote();
+            }
+        });
+
+        inpPos.addEventListener('input', updateValues);
+        inpLfo.addEventListener('input', updateValues);
+        inpUni.addEventListener('input', updateValues);
+        inpAtk.addEventListener('input', updateValues);
+        inpRel.addEventListener('input', updateValues);
+    </script>
+</body>
+</html>
